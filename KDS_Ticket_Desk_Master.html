@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KDS Ticket Desk — Annual Play 2026</title>
+
+<!-- ============================================================
+     FIREBASE CONFIG
+     Cloud backup is ON, pointed at your Firebase Realtime Database:
+     https://kdsticktes-default-rtdb.firebaseio.com/
+     Every ticket/ambassador/payment change is written there in real
+     time as a backup, and is also cached in this browser's
+     localStorage so the app still works offline.
+     IMPORTANT: your database's Security Rules must allow read/write
+     (e.g. test-mode rules) or this will silently fail back to
+     local-only storage — see the note below the sidebar in the app.
+     Paths used: "kds_tickets", "kds_ambassadors", "kds_payments"
+     Set window.FIREBASE_CONFIG back to `null` to disable cloud sync.
+     ============================================================ -->
+<script>
+  window.FIREBASE_CONFIG = {
+    databaseURL: "https://kdsticktes-default-rtdb.firebaseio.com/"
+  };
+</script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<style>
+  :root{
+    --ink:#faf7f1; --ink2:#ffffff; --panel:#ffffff;
+    --gold:#b9822f; --gold-soft:#8a5f1f; --cream:#2b1c12;
+    --muted:#8a7565;
+    --border:#e6dbc4;
+    --hover:#f6efdd;
+    --c-withme:#6b7280;
+    --c-handed:#e0559b;
+    --c-soldamb:#2f9d64;
+    --c-soldspot:#c97a1e;
+    --c-payments:#b9822f;
+    --danger:#c23b4f;
+    --radius:10px;
+    --sidebar-w:220px;
+    --mobile-topbar-h:56px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:var(--ink);
+    color:var(--cream);
+    font-size:14.5px;
+  }
+  a{color:inherit;}
+
+  /* ---------- PIN GATE ---------- */
+  #pinGate{
+    position:fixed; inset:0; z-index:999;
+    background:radial-gradient(ellipse at 30% 20%, #fffaf0 0%, #f7edd6 55%, #efe1bf 100%);
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    padding:20px;
+  }
+  #pinGate .mark{
+    width:52px;height:52px;border-radius:50%;
+    border:1.5px solid var(--gold); display:flex;align-items:center;justify-content:center;
+    margin-bottom:14px; font-weight:700; color:var(--gold); font-size:20px;
+    background:#fff;
+  }
+  #pinGate h1{font-size:19px; font-weight:600; letter-spacing:.03em; margin:0 0 2px; color:var(--cream);}
+  #pinGate p.sub{color:var(--muted); font-size:12.5px; margin:0 0 22px;}
+  #pinDots{display:flex; gap:14px; margin-bottom:18px;}
+  #pinDots span{
+    width:14px;height:14px;border-radius:50%; border:1.5px solid var(--gold-soft); background:transparent;
+    transition:background .15s;
+  }
+  #pinDots span.filled{background:var(--gold);}
+  #pinPad{display:grid; grid-template-columns:repeat(3,64px); gap:12px;}
+  #pinPad button{
+    width:64px;height:64px;border-radius:50%;
+    border:1px solid var(--border); background:#fff; color:var(--cream);
+    font-size:20px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  #pinPad button:active{background:#f0e2c0;}
+  #pinPad button.wide{grid-column:span 1;}
+  #pinError{color:var(--danger); font-size:12.5px; height:18px; margin-top:10px;}
+
+  /* ---------- MOBILE TOPBAR ---------- */
+  #mobileTopbar{display:none;}
+  #sidebarBackdrop{display:none;}
+
+  /* ---------- APP SHELL ---------- */
+  #app{display:none; min-height:100vh;}
+  #app.show{display:flex;}
+
+  #sidebar{
+    width:var(--sidebar-w); flex:none; background:var(--ink2);
+    border-right:1px solid var(--border); padding:18px 14px; position:sticky; top:0; height:100vh;
+  }
+  #sidebar .brand{display:flex; align-items:center; gap:9px; padding:4px 6px 20px; border-bottom:1px solid var(--border); margin-bottom:14px;}
+  #sidebar .brand .b-mark{width:30px;height:30px;border-radius:50%;border:1.3px solid var(--gold);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:700;font-size:13px;}
+  #sidebar .brand div b{display:block; font-size:13.5px; letter-spacing:.02em;}
+  #sidebar .brand div span{display:block; font-size:10.5px; color:var(--muted);}
+  #sidebar nav button{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    background:none; border:none; color:var(--muted); padding:10px 10px; border-radius:8px;
+    font-size:13.5px; cursor:pointer; margin-bottom:2px;
+  }
+  #sidebar nav button .ic{width:18px; text-align:center; font-size:14px;}
+  #sidebar nav button:hover{background:var(--hover); color:var(--cream);}
+  #sidebar nav button.active{background:#f1e0ad; color:var(--gold-soft); font-weight:600;}
+  #sidebar .storage-note{margin-top:20px; font-size:10.5px; color:var(--muted); border-top:1px solid var(--border); padding-top:12px; line-height:1.5;}
+  #sidebar .storage-note b{color:var(--gold-soft);}
+
+  #main{flex:1; min-width:0; padding:22px 28px 60px;}
+  #topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; gap:16px; flex-wrap:wrap;}
+  #topbar h2{margin:0; font-size:19px; font-weight:600;}
+  #topbar .search{
+    display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--border);
+    border-radius:8px; padding:8px 12px; min-width:260px;
+  }
+  #topbar .search input{background:none; border:none; outline:none; color:var(--cream); font-size:13px; width:100%;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* cards */
+  .cards{display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:22px;}
+  @media(max-width:1100px){.cards{grid-template-columns:repeat(2,1fr);}}
+  .kcard{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px; border-left:4px solid var(--c-withme); box-shadow:0 1px 3px rgba(60,40,10,.04);}
+  .kcard.c2{border-left-color:var(--c-handed);}
+  .kcard.c3{border-left-color:var(--c-soldamb);}
+  .kcard.c4{border-left-color:var(--c-payments);}
+  .kcard.c5{border-left-color:var(--c-soldspot);}
+  .kcard .n{font-size:26px; font-weight:700;}
+  .kcard .l{font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.4;}
+  .kcard .amt{font-size:12px; color:var(--gold-soft); margin-top:6px; font-weight:600;}
+
+  .chart-grid{display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-bottom:20px;}
+  @media(max-width:1000px){.chart-grid{grid-template-columns:1fr;}}
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px; box-shadow:0 1px 3px rgba(60,40,10,.04);}
+  .panel h3{margin:0 0 12px; font-size:13.5px; color:var(--gold-soft); font-weight:600;}
+  .panel canvas{max-height:260px;}
+  .panel-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; flex-wrap:wrap;}
+  .panel-head h3{margin:0;}
+  .panel-head .export-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  .btn.export{background:#f3ead4; color:var(--gold-soft); border:1px solid var(--border); padding:5px 11px; font-size:11.5px; font-weight:600;}
+  .btn.export:hover{background:var(--hover);}
+
+  .confirmed-banner{
+    background:linear-gradient(90deg, rgba(47,157,100,.12), rgba(201,122,30,.12));
+    border:1px solid #2f9d6455; border-radius:var(--radius); padding:14px 18px; margin-bottom:20px;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+  .confirmed-banner .big{font-size:24px; font-weight:700; color:#1f7a48;}
+  .confirmed-banner .small{font-size:11.5px; color:var(--muted);}
+
+  /* filters */
+  .filters{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; align-items:center;}
+  select, input[type=text], input[type=number], textarea{
+    background:#fff; border:1px solid var(--border); color:var(--cream);
+    border-radius:7px; padding:8px 10px; font-size:13px; outline:none;
+  }
+  textarea{width:100%; resize:vertical; font-family:inherit;}
+  .btn{
+    background:var(--gold); color:#fff; border:none; border-radius:7px;
+    padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn.secondary{background:#f3ead4; color:var(--cream); border:1px solid var(--border);}
+  .btn.danger{background:var(--danger); color:#fff;}
+  .btn:disabled{opacity:.5; cursor:not-allowed;}
+  .btn.small{padding:5px 10px; font-size:12px;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em; padding:8px 10px; border-bottom:1px solid var(--border);}
+  td{padding:9px 10px; border-bottom:1px solid var(--border);}
+  tr:hover td{background:var(--hover);}
+  .pill{display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600;}
+  .pill.withme{background:#6b728026; color:#42505c;}
+  .pill.handed{background:#e0559b26; color:#a3236c;}
+  .pill.soldamb{background:#2f9d6426; color:#1f7a48;}
+  .pill.soldspot{background:#c97a1e26; color:#9c5c10;}
+  .id-code{font-family:ui-monospace,Consolas,monospace; letter-spacing:.02em;}
+  .row-click{cursor:pointer;}
+  .table-wrap{max-height:520px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius);}
+  .table-wrap table th{position:sticky; top:0; background:#fbf7ee; z-index:1;}
+
+  .empty{color:var(--muted); font-size:12.5px; padding:20px; text-align:center;}
+
+  /* modal */
+  #modalOverlay{position:fixed; inset:0; background:#241708a6; display:none; align-items:center; justify-content:center; z-index:500; padding:16px;}
+  #modalOverlay.show{display:flex;}
+  .modal{background:var(--ink2); border:1px solid var(--border); border-radius:12px; padding:22px; width:420px; max-width:92vw; max-height:88vh; overflow:auto; box-shadow:0 10px 40px rgba(30,15,0,.25);}
+  .modal h3{margin:0 0 4px; font-size:16px;}
+  .modal .sub{color:var(--muted); font-size:12px; margin-bottom:16px;}
+  .modal label{display:block; font-size:11.5px; color:var(--muted); margin:12px 0 4px;}
+  .modal input, .modal select{width:100%;}
+  .modal .close{position:absolute; top:16px; right:20px; cursor:pointer; color:var(--muted); font-size:18px;}
+  .modal-actions{display:flex; gap:8px; margin-top:18px; flex-wrap:wrap;}
+  .modal-pos{position:relative;}
+  .field-note{font-size:11px; color:var(--muted); margin-top:4px;}
+
+  /* forms in ambassadors */
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .form-grid .full{grid-column:1/-1;}
+  .form-grid label{font-size:11.5px; color:var(--muted); margin-bottom:4px; display:block;}
+
+  .toast{position:fixed; bottom:22px; right:22px; background:#2b1c12; border:1px solid var(--gold); color:#fdf6e6;
+    padding:12px 18px; border-radius:8px; font-size:13px; z-index:900; display:none; max-width:320px; box-shadow:0 6px 20px rgba(0,0,0,.2);}
+  .toast.show{display:block;}
+
+  .show-breakdown-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  @media(max-width:900px){.show-breakdown-grid{grid-template-columns:1fr;}}
+  .show-block{background:#fdfbf5; border:1px solid var(--border); border-radius:var(--radius); padding:14px;}
+  .show-block-title{display:flex; align-items:baseline; justify-content:space-between; font-size:14.5px; font-weight:700; color:var(--gold-soft); margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--border);}
+  .show-block-title .show-price{font-size:11px; font-weight:600; color:var(--muted);}
+  .sb-row{display:flex; align-items:center; justify-content:space-between; font-size:12.5px; color:var(--muted); padding:5px 0;}
+  .sb-row b{color:var(--cream); font-size:13.5px; font-weight:600;}
+  .sb-row.highlight{margin-top:4px; padding-top:8px; border-top:1px dashed var(--border);}
+  .sb-row.highlight b{color:#9c5c10;}
+  .sb-note{font-size:10.5px; color:var(--muted); margin-top:6px; font-style:italic;}
+
+  .grid-tabs{display:flex; gap:6px;}
+  .gtab{background:var(--panel); border:1px solid var(--border); color:var(--muted); padding:7px 16px; border-radius:7px; font-size:12.5px; cursor:pointer;}
+  .gtab:hover{color:var(--cream);}
+  .gtab.active{background:#f1e0ad; color:var(--gold-soft); font-weight:600; border-color:var(--gold);}
+
+  .grid-legend{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; font-size:12px; color:var(--muted); align-items:center;}
+  .grid-legend .leg{display:flex; align-items:center; gap:6px;}
+  .grid-legend .sw{width:12px; height:12px; border-radius:3px; display:inline-block;}
+  .sw.withme{background:var(--c-withme);}
+  .sw.handed{background:var(--c-handed);}
+  .sw.soldamb{background:var(--c-soldamb);}
+  .sw.soldspot{background:var(--c-soldspot);}
+
+  .ticket-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(58px,1fr)); gap:8px;}
+  .tbox{
+    border-radius:7px; padding:9px 4px; text-align:center; font-size:12px; font-weight:700;
+    cursor:pointer; border:1px solid rgba(0,0,0,.12); user-select:none; transition:transform .08s, outline .08s;
+  }
+  .tbox:hover{transform:translateY(-2px); outline:2px solid var(--gold);}
+  .tbox.withme{background:var(--c-withme); color:#fff;}
+  .tbox.handed{background:var(--c-handed); color:#3a0021;}
+  .tbox.soldamb{background:var(--c-soldamb); color:#00230f;}
+  .tbox.soldspot{background:var(--c-soldspot); color:#2a1500;}
+
+  .amb-card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(60,40,10,.04);}
+  .amb-card .top{display:flex; justify-content:space-between; align-items:center;}
+  .amb-card .name{font-weight:600; font-size:14.5px;}
+  .amb-swatch{display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--c-handed); margin-right:6px;}
+  .amb-stats{display:flex; gap:18px; margin-top:10px; flex-wrap:wrap;}
+  .amb-stats .s{font-size:12px; color:var(--muted);}
+  .amb-stats .s b{display:block; color:var(--cream); font-size:15px;}
+
+  /* ---------- RESPONSIVE / MOBILE ---------- */
+  @media(max-width:860px){
+    #mobileTopbar{
+      display:flex; align-items:center; gap:10px; position:fixed; top:0; left:0; right:0; height:var(--mobile-topbar-h);
+      background:var(--ink2); border-bottom:1px solid var(--border); padding:0 14px; z-index:700;
+      box-shadow:0 1px 4px rgba(60,40,10,.05);
+    }
+    #mobileTopbar button{background:none; border:1px solid var(--border); border-radius:8px; width:38px; height:38px; font-size:18px; color:var(--cream); cursor:pointer;}
+    #mobileTopbar .mt-brand{display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px;}
+    #mobileTopbar .mt-brand .b-mark{width:26px;height:26px;border-radius:50%;border:1.3px solid var(--gold);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:700;font-size:12px;}
+
+    #app.show{padding-top:var(--mobile-topbar-h);}
+    #sidebar{
+      position:fixed; top:var(--mobile-topbar-h); bottom:0; left:0; width:76vw; max-width:280px;
+      transform:translateX(-100%); transition:transform .22s ease; z-index:750; height:calc(100vh - var(--mobile-topbar-h));
+      box-shadow:2px 0 18px rgba(30,20,5,.15);
+    }
+    #sidebar.open{transform:translateX(0);}
+    #sidebar .brand{display:none;}
+    #sidebarBackdrop{
+      display:none; position:fixed; inset:0; top:var(--mobile-topbar-h); background:#1c120759; z-index:740;
+    }
+    #sidebarBackdrop.show{display:block;}
+
+    #main{padding:14px 12px 50px;}
+    #topbar{margin-bottom:14px;}
+    #topbar h2{font-size:17px;}
+    #topbar .search{min-width:0; width:100%;}
+    .cards{grid-template-columns:repeat(2,1fr); gap:10px;}
+    .kcard{padding:12px;}
+    .kcard .n{font-size:21px;}
+    .form-grid{grid-template-columns:1fr;}
+    .show-breakdown-grid{grid-template-columns:1fr;}
+    .ticket-grid{grid-template-columns:repeat(auto-fill, minmax(44px,1fr)); gap:6px;}
+    .tbox{padding:7px 2px; font-size:11px;}
+    .modal{padding:16px;}
+    .panel canvas{max-height:200px;}
+    .confirmed-banner{flex-direction:column; align-items:flex-start;}
+    .confirmed-banner .small{text-align:left !important;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= PIN GATE ================= -->
+<div id="pinGate">
+  <div class="mark">K</div>
+  <h1>KDS Ticket Desk</h1>
+  <p class="sub">Enter PIN to continue</p>
+  <div id="pinDots"><span></span><span></span><span></span><span></span><span></span></div>
+  <div id="pinPad">
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <button data-k="clear">C</button><button data-k="0">0</button><button data-k="back">&larr;</button>
+  </div>
+  <div id="pinError"></div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="mobileTopbar">
+  <button id="btnMobileMenu" aria-label="Open menu">&#9776;</button>
+  <div class="mt-brand"><span class="b-mark">K</span> KDS Ticket Desk</div>
+</div>
+<div id="sidebarBackdrop"></div>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="b-mark">K</div>
+      <div><b>KDS Ticket Desk</b><span>Annual Play 2026</span></div>
+    </div>
+    <nav>
+      <button data-view="dashboard" class="active"><span class="ic">&#9635;</span> Dashboard</button>
+      <button data-view="grid"><span class="ic">&#9635;</span> Ticket Grid</button>
+      <button data-view="tickets"><span class="ic">&#9635;</span> All Tickets</button>
+      <button data-view="ambassadors"><span class="ic">&#9635;</span> Ambassadors</button>
+      <button data-view="payments"><span class="ic">&#9635;</span> Payments</button>
+      <button data-view="reports"><span class="ic">&#9635;</span> Reports</button>
+    </nav>
+    <div class="storage-note" id="storageNote">Checking storage mode&hellip;</div>
+  </aside>
+
+  <main id="main">
+
+    <!-- ---------- DASHBOARD ---------- -->
+    <section class="view active" id="view-dashboard">
+      <div id="topbar"><h2>Dashboard</h2>
+        <select id="dashShowFilter">
+          <option value="all">All Shows</option>
+          <option value="1">Show 1</option>
+          <option value="2">Show 2</option>
+          <option value="3">Show 3</option>
+        </select>
+      </div>
+
+      <div class="confirmed-banner">
+        <div>
+          <div class="small">CONFIRMED SOLD (Category 3 + 5)</div>
+          <div class="big" id="confirmedCount">0 tickets</div>
+        </div>
+        <div class="small" id="confirmedRevenue" style="text-align:right;">Rs 0 collected</div>
+      </div>
+
+      <div class="panel-head" style="margin-bottom:10px;">
+        <span style="font-size:11.5px; color:var(--muted);">Category summary</span>
+        <div class="export-actions"><button class="btn export" id="btnCsvCategorySummary">Download CSV</button></div>
+      </div>
+      <div class="cards">
+        <div class="kcard"><div class="n" id="cnt-withme">0</div><div class="l">1 &middot; With Me<br>(unassigned stock)</div></div>
+        <div class="kcard c2"><div class="n" id="cnt-handed">0</div><div class="l">2 &middot; Handed to Ambassador</div></div>
+        <div class="kcard c3"><div class="n" id="cnt-soldamb">0</div><div class="l">3 &middot; Sold by Ambassador</div><div class="amt" id="amt-soldamb">Rs 0</div></div>
+        <div class="kcard c4"><div class="n" id="cnt-payrecv">0</div><div class="l">4 &middot; Payments Received<br>from Ambassadors</div><div class="amt" id="amt-payrecv">Rs 0</div></div>
+        <div class="kcard c5"><div class="n" id="cnt-soldspot">0</div><div class="l">5 &middot; Sold on Spot</div><div class="amt" id="amt-soldspot">Rs 0</div></div>
+      </div>
+
+      <div class="panel" style="margin-bottom:22px;">
+        <div class="panel-head">
+          <h3>Show-wise Breakdown</h3>
+          <div class="export-actions"><button class="btn export" id="btnCsvShowBreakdown">Download CSV</button></div>
+        </div>
+        <div class="show-breakdown-grid" id="showBreakdown"></div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="panel"><div class="panel-head"><h3>Tickets by Category</h3><div class="export-actions"><button class="btn export" data-png-chart="cat" data-png-name="tickets-by-category">Save PNG</button></div></div><canvas id="chartCategory"></canvas></div>
+        <div class="panel"><div class="panel-head"><h3>Tickets by Show</h3><div class="export-actions"><button class="btn export" data-png-chart="show" data-png-name="tickets-by-show">Save PNG</button></div></div><canvas id="chartShow"></canvas></div>
+      </div>
+      <div class="chart-grid">
+        <div class="panel"><div class="panel-head"><h3>Revenue by Ambassador</h3><div class="export-actions"><button class="btn export" data-png-chart="ambRev" data-png-name="revenue-by-ambassador">Save PNG</button></div></div><canvas id="chartAmbRevenue"></canvas></div>
+        <div class="panel"><div class="panel-head"><h3>Revenue: Ambassador vs On-Spot</h3><div class="export-actions"><button class="btn export" data-png-chart="revSplit" data-png-name="revenue-split">Save PNG</button></div></div><canvas id="chartRevenueSplit"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ---------- TICKET GRID ---------- -->
+    <section class="view" id="view-grid">
+      <div id="topbar">
+        <h2>Ticket Grid</h2>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <div class="grid-tabs" id="gridShowTabs">
+            <button class="gtab active" data-show="1">Show 1</button>
+            <button class="gtab" data-show="2">Show 2</button>
+            <button class="gtab" data-show="3">Show 3</button>
+          </div>
+          <button class="btn export" id="btnCsvGrid">Download CSV</button>
+        </div>
+      </div>
+      <div class="grid-legend">
+        <span class="leg"><i class="sw withme"></i> With Me</span>
+        <span class="leg"><i class="sw handed"></i> Handed to Ambassador</span>
+        <span class="leg"><i class="sw soldamb"></i> Sold by Ambassador</span>
+        <span class="leg"><i class="sw soldspot"></i> Sold on Spot</span>
+        <span class="leg" style="margin-left:auto; color:var(--muted);">Tap any ticket to update it</span>
+      </div>
+      <div class="ticket-grid" id="ticketGrid"></div>
+    </section>
+
+    <!-- ---------- TICKETS ---------- -->
+    <section class="view" id="view-tickets">
+      <div id="topbar">
+        <h2>All Tickets</h2>
+        <div class="search"><input type="text" id="ticketSearch" placeholder="Search ticket code&hellip;"></div>
+      </div>
+      <div class="filters">
+        <select id="fltShow"><option value="all">All Shows</option><option value="1">Show 1</option><option value="2">Show 2</option><option value="3">Show 3</option></select>
+        <select id="fltStatus">
+          <option value="all">All Categories</option>
+          <option value="with_me">1 · With Me</option>
+          <option value="with_ambassador">2 · Handed to Ambassador</option>
+          <option value="sold_ambassador">3 · Sold by Ambassador</option>
+          <option value="sold_spot">5 · Sold on Spot</option>
+        </select>
+        <select id="fltAmbassador"><option value="all">All Ambassadors</option></select>
+        <span style="color:var(--muted); font-size:12px;" id="ticketCountLabel"></span>
+        <button class="btn export" id="btnCsvTickets" style="margin-left:auto;">Download CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Show</th><th>Category</th><th>Ambassador</th><th>Amount</th><th>Holder</th><th>Received By</th><th>Payment</th></tr></thead>
+          <tbody id="ticketsTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- AMBASSADORS ---------- -->
+    <section class="view" id="view-ambassadors">
+      <div id="topbar"><h2>Ambassadors</h2></div>
+
+      <div class="panel" style="margin-bottom:18px;">
+        <h3>Add Ambassador</h3>
+        <div class="form-grid">
+          <div><label>Name</label><input type="text" id="ambName" placeholder="e.g. Ayesha Khan"></div>
+          <div><label>Phone (optional)</label><input type="text" id="ambPhone" placeholder="03xx-xxxxxxx"></div>
+        </div>
+        <div style="margin-top:12px;"><button class="btn" id="btnAddAmbassador">Add Ambassador</button></div>
+      </div>
+
+      <div class="panel" style="margin-bottom:18px;">
+        <h3>Hand Over Tickets to an Ambassador</h3>
+        <div class="form-grid">
+          <div><label>Ambassador</label><select id="assignAmbassador"></select></div>
+          <div><label>Show</label><select id="assignShow"><option value="1">Show 1</option><option value="2">Show 2</option><option value="3">Show 3</option></select></div>
+          <div class="full">
+            <label>Ticket numbers &mdash; ranges and/or commas, e.g. <code>1-20, 35, 50-60</code></label>
+            <textarea id="assignNumbers" rows="2" placeholder="1-20, 35, 50-60"></textarea>
+          </div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="btnAssignTickets">Hand Over Selected Tickets</button>
+          <span style="font-size:12px; color:var(--muted);" id="assignPreview"></span>
+        </div>
+      </div>
+
+      <div class="panel-head" style="margin-bottom:10px;">
+        <span style="font-size:11.5px; color:var(--muted);">Ambassador performance</span>
+        <div class="export-actions"><button class="btn export" id="btnCsvAmbassadors">Download CSV</button></div>
+      </div>
+      <div id="ambassadorsList"></div>
+    </section>
+
+    <!-- ---------- PAYMENTS ---------- -->
+    <section class="view" id="view-payments">
+      <div id="topbar"><h2>Payments from Ambassadors</h2></div>
+      <p style="color:var(--muted); font-size:12.5px; max-width:640px;">
+        Record a lump-sum payment from an ambassador. It's divided evenly across that ambassador's
+        sold tickets which don't yet have a confirmed per-ticket amount, and those tickets are marked
+        as paid. Tickets already priced individually are left as-is unless still unpaid.
+      </p>
+      <div class="panel" style="margin:14px 0 20px; max-width:520px;">
+        <h3>Record Bulk Payment</h3>
+        <div class="form-grid">
+          <div><label>Ambassador</label><select id="paymentAmbassador"></select></div>
+          <div><label>Total amount received (Rs)</label><input type="number" id="paymentAmount" placeholder="e.g. 15000"></div>
+        </div>
+        <div id="paymentPreview" class="field-note" style="margin-top:10px;"></div>
+        <div style="margin-top:12px;"><button class="btn" id="btnRecordPayment">Record Payment</button></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Payment History</h3>
+          <div class="export-actions"><button class="btn export" id="btnCsvPayments">Download CSV</button></div>
+        </div>
+        <div class="table-wrap" style="max-height:300px;">
+          <table>
+            <thead><tr><th>Date</th><th>Ambassador</th><th>Amount</th><th>Tickets Covered</th><th>Per Ticket</th></tr></thead>
+            <tbody id="paymentsTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- REPORTS ---------- -->
+    <section class="view" id="view-reports">
+      <div id="topbar"><h2>Reports</h2></div>
+      <div class="chart-grid">
+        <div class="panel"><div class="panel-head"><h3>Category Totals (All Shows)</h3><div class="export-actions">
+          <button class="btn export" data-csv-report="repCat">CSV</button>
+          <button class="btn export" data-png-chart="repCat" data-png-name="category-totals">PNG</button>
+        </div></div><canvas id="repChartCategory"></canvas></div>
+        <div class="panel"><div class="panel-head"><h3>Sold vs Remaining, by Show</h3><div class="export-actions">
+          <button class="btn export" data-csv-report="repShow">CSV</button>
+          <button class="btn export" data-png-chart="repShow" data-png-name="sold-vs-remaining">PNG</button>
+        </div></div><canvas id="repChartShow"></canvas></div>
+      </div>
+      <div class="chart-grid">
+        <div class="panel"><div class="panel-head"><h3>Revenue by Category</h3><div class="export-actions">
+          <button class="btn export" data-csv-report="repRev">CSV</button>
+          <button class="btn export" data-png-chart="repRev" data-png-name="revenue-by-category">PNG</button>
+        </div></div><canvas id="repChartRevenue"></canvas></div>
+        <div class="panel"><div class="panel-head"><h3>Ambassador Performance (tickets sold)</h3><div class="export-actions">
+          <button class="btn export" data-csv-report="repAmb">CSV</button>
+          <button class="btn export" data-png-chart="repAmb" data-png-name="ambassador-performance">PNG</button>
+        </div></div><canvas id="repChartAmbPerf"></canvas></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ---------- TICKET MODAL ---------- -->
+<div id="modalOverlay">
+  <div class="modal modal-pos">
+    <span class="close" id="modalClose">&times;</span>
+    <h3 id="modalTitle">Ticket</h3>
+    <div class="sub" id="modalSub"></div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   DATA LAYER — Firestore if configured, else localStorage
+   ========================================================= */
+const SHOWS = [1,2,3];
+const TICKETS_PER_SHOW = 160;
+const SHOW_ORIGINAL_PRICE = {1:500, 2:600, 3:700};
+const LS_KEY_TICKETS = 'kds_tickets_v1';
+const LS_KEY_AMBASSADORS = 'kds_ambassadors_v1';
+const LS_KEY_PAYMENTS = 'kds_payments_v1';
+
+let state = { tickets: [], ambassadors: [], payments: [] };
+let USE_FIREBASE = false;
+let db = null;
+
+function pad3(n){ return String(n).padStart(3,'0'); }
+function ticketIdFor(show,num){ return `KDS-S${show}-${pad3(num)}`; }
+
+function seedTickets(){
+  const arr = [];
+  SHOWS.forEach(s=>{
+    for(let n=1;n<=TICKETS_PER_SHOW;n++){
+      arr.push({
+        id: ticketIdFor(s,n), show:s, number:n,
+        status:'with_me', ambassadorId:null, amount:null, holder:null,
+        paymentReceived:false, handedAt:null, soldAt:null
+      });
+    }
+  });
+  return arr;
+}
+
+function loadLocal(){
+  let tickets = JSON.parse(localStorage.getItem(LS_KEY_TICKETS) || 'null');
+  if(!tickets){ tickets = seedTickets(); localStorage.setItem(LS_KEY_TICKETS, JSON.stringify(tickets)); }
+  state.tickets = tickets;
+  state.ambassadors = JSON.parse(localStorage.getItem(LS_KEY_AMBASSADORS) || '[]');
+  state.payments = JSON.parse(localStorage.getItem(LS_KEY_PAYMENTS) || '[]');
+}
+function saveLocalTickets(){ localStorage.setItem(LS_KEY_TICKETS, JSON.stringify(state.tickets)); }
+function saveLocalAmbassadors(){ localStorage.setItem(LS_KEY_AMBASSADORS, JSON.stringify(state.ambassadors)); }
+function saveLocalPayments(){ localStorage.setItem(LS_KEY_PAYMENTS, JSON.stringify(state.payments)); }
+
+async function initStore(){
+  if(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL){
+    try{
+      firebase.initializeApp(window.FIREBASE_CONFIG);
+      db = firebase.database();
+      // Fail fast if security rules block us, instead of hanging silently.
+      await db.ref('.info/connected').once('value');
+
+      const ticketsRef = db.ref('kds_tickets');
+      const existing = await ticketsRef.once('value');
+      if(!existing.exists()){
+        const seed = seedTickets();
+        const obj = {};
+        seed.forEach(t=> obj[t.id] = t);
+        await ticketsRef.set(obj);
+      }
+      USE_FIREBASE = true;
+      document.getElementById('storageNote').innerHTML = '<b>Cloud backup ON</b> — Firebase Realtime Database';
+
+      ticketsRef.on('value', snap=>{
+        const val = snap.val() || {};
+        state.tickets = Object.values(val).sort((a,b)=> a.show-b.show || a.number-b.number);
+        renderAll();
+      });
+      db.ref('kds_ambassadors').on('value', snap=>{
+        const val = snap.val() || {};
+        state.ambassadors = Object.keys(val).map(id=>({id, ...val[id]}));
+        renderAll();
+      });
+      db.ref('kds_payments').on('value', snap=>{
+        const val = snap.val() || {};
+        state.payments = Object.keys(val).map(id=>({id, ...val[id]})).sort((a,b)=> (b.date||0)-(a.date||0));
+        renderAll();
+      });
+      return;
+    }catch(e){
+      console.error('Firebase init failed, falling back to local storage', e);
+      document.getElementById('storageNote').innerHTML = '<b>Cloud backup FAILED</b> — check the database\'s Security Rules.<br>Using local storage on this device for now.';
+      USE_FIREBASE = false;
+      db = null;
+      loadLocal();
+      renderAll();
+      return;
+    }
+  }
+  document.getElementById('storageNote').innerHTML = '<b>Local storage mode</b> — data stays on this device.<br>Paste a Firebase config at the top of the file to sync across devices.';
+  loadLocal();
+  renderAll();
+}
+
+/* ---- mutation helpers ---- */
+async function updateTicket(id, patch){
+  if(USE_FIREBASE){
+    await db.ref('kds_tickets/'+id).update(patch);
+  } else {
+    const t = state.tickets.find(x=>x.id===id);
+    if(t){ Object.assign(t, patch); saveLocalTickets(); renderAll(); }
+  }
+}
+async function bulkUpdateTickets(ids, patch){
+  if(USE_FIREBASE){
+    const updates = {};
+    ids.forEach(id=>{
+      Object.entries(patch).forEach(([k,v])=>{ updates['kds_tickets/'+id+'/'+k] = v; });
+    });
+    await db.ref().update(updates);
+  } else {
+    ids.forEach(id=>{
+      const t = state.tickets.find(x=>x.id===id);
+      if(t) Object.assign(t, patch);
+    });
+    saveLocalTickets(); renderAll();
+  }
+}
+async function addAmbassador(amb){
+  if(USE_FIREBASE){
+    const ref = db.ref('kds_ambassadors').push();
+    await ref.set(amb);
+  } else {
+    amb.id = 'amb_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+    state.ambassadors.push(amb);
+    saveLocalAmbassadors(); renderAll();
+  }
+}
+async function addPayment(payment){
+  if(USE_FIREBASE){
+    const ref = db.ref('kds_payments').push();
+    await ref.set(payment);
+  } else {
+    payment.id = 'pay_' + Date.now();
+    state.payments.unshift(payment);
+    saveLocalPayments(); renderAll();
+  }
+}
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+function fmtRs(n){ n = n||0; return 'Rs ' + Number(n).toLocaleString('en-PK', {maximumFractionDigits:0}); }
+function ambName(id){ const a = state.ambassadors.find(x=>x.id===id); return a? a.name : '—'; }
+function statusLabel(s){
+  return {with_me:'1 · With Me', with_ambassador:'2 · Handed', sold_ambassador:'3 · Sold (Ambassador)', sold_spot:'5 · Sold (Spot)'}[s] || s;
+}
+function statusPillClass(s){
+  return {with_me:'withme', with_ambassador:'handed', sold_ambassador:'soldamb', sold_spot:'soldspot'}[s] || '';
+}
+function parseNumbers(input){
+  const set = new Set();
+  (input||'').split(',').forEach(part=>{
+    part = part.trim();
+    if(!part) return;
+    if(part.includes('-')){
+      const bits = part.split('-').map(x=>parseInt(x.trim(),10));
+      if(!isNaN(bits[0]) && !isNaN(bits[1])){
+        const lo = Math.min(bits[0],bits[1]), hi = Math.max(bits[0],bits[1]);
+        for(let i=lo;i<=hi;i++) set.add(i);
+      }
+    } else {
+      const n = parseInt(part,10);
+      if(!isNaN(n)) set.add(n);
+    }
+  });
+  return Array.from(set).sort((a,b)=>a-b);
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>t.classList.remove('show'), 3200);
+}
+
+/* =========================================================
+   PIN GATE
+   ========================================================= */
+const PIN_CODE = '55155';
+let pinBuffer = '';
+function updatePinDots(){
+  const dots = document.querySelectorAll('#pinDots span');
+  dots.forEach((d,i)=> d.classList.toggle('filled', i < pinBuffer.length));
+}
+document.getElementById('pinPad').addEventListener('click', e=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const k = btn.dataset.k;
+  document.getElementById('pinError').textContent = '';
+  if(k==='clear'){ pinBuffer=''; }
+  else if(k==='back'){ pinBuffer = pinBuffer.slice(0,-1); }
+  else if(pinBuffer.length<5){ pinBuffer += k; }
+  updatePinDots();
+  if(pinBuffer.length===5){
+    if(pinBuffer===PIN_CODE){
+      sessionStorage.setItem('kds_pin_ok','1');
+      document.getElementById('pinGate').style.display='none';
+      document.getElementById('app').classList.add('show');
+      initStore();
+    } else {
+      document.getElementById('pinError').textContent = 'Incorrect PIN';
+      pinBuffer=''; updatePinDots();
+    }
+  }
+});
+if(sessionStorage.getItem('kds_pin_ok')==='1'){
+  document.getElementById('pinGate').style.display='none';
+  document.getElementById('app').classList.add('show');
+  initStore();
+}
+
+/* =========================================================
+   NAVIGATION
+   ========================================================= */
+function closeMobileSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarBackdrop').classList.remove('show');
+}
+document.getElementById('btnMobileMenu').addEventListener('click', ()=>{
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarBackdrop').classList.toggle('show');
+});
+document.getElementById('sidebarBackdrop').addEventListener('click', closeMobileSidebar);
+
+document.querySelectorAll('#sidebar nav button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#sidebar nav button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='reports') renderReportCharts();
+    if(btn.dataset.view==='dashboard') renderDashboardCharts();
+    if(btn.dataset.view==='grid') renderTicketGrid();
+    closeMobileSidebar();
+  });
+});
+
+/* =========================================================
+   TICKET GRID VIEW
+   ========================================================= */
+let gridActiveShow = 1;
+
+document.getElementById('gridShowTabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.gtab');
+  if(!btn) return;
+  gridActiveShow = Number(btn.dataset.show);
+  document.querySelectorAll('.gtab').forEach(b=> b.classList.toggle('active', b===btn));
+  renderTicketGrid();
+});
+
+function renderTicketGrid(){
+  const wrap = document.getElementById('ticketGrid');
+  if(!wrap) return;
+  const ts = state.tickets.filter(t=>t.show===gridActiveShow).sort((a,b)=>a.number-b.number);
+  const clsFor = s=> s==='with_me'?'withme' : s==='with_ambassador'?'handed' : s==='sold_ambassador'?'soldamb' : 'soldspot';
+  wrap.innerHTML = ts.map(t=>
+    `<div class="tbox ${clsFor(t.status)}" data-id="${t.id}" title="${t.id} — ${statusLabel(t.status)}${t.holder? ' — '+t.holder : ''}${t.status==='sold_spot' && t.receivedBy? ' — received by '+t.receivedBy : ''}">${pad3(t.number)}</div>`
+  ).join('');
+  wrap.querySelectorAll('.tbox').forEach(el=>{
+    el.addEventListener('click', ()=> openTicketModal(el.dataset.id));
+  });
+}
+
+/* =========================================================
+   RENDER — DASHBOARD
+   ========================================================= */
+let charts = {};
+function destroyChart(key){ if(charts[key]){ charts[key].destroy(); delete charts[key]; } }
+
+function filteredByShow(list, showVal){
+  if(showVal==='all') return list;
+  return list.filter(t=>String(t.show)===String(showVal));
+}
+
+function renderDashboard(){
+  const showVal = document.getElementById('dashShowFilter').value;
+  const ts = filteredByShow(state.tickets, showVal);
+
+  const withMe = ts.filter(t=>t.status==='with_me');
+  const handed = ts.filter(t=>t.status==='with_ambassador');
+  const soldAmb = ts.filter(t=>t.status==='sold_ambassador');
+  const soldSpot = ts.filter(t=>t.status==='sold_spot');
+  const paidTickets = soldAmb.filter(t=>t.paymentReceived);
+
+  document.getElementById('cnt-withme').textContent = withMe.length;
+  document.getElementById('cnt-handed').textContent = handed.length;
+  document.getElementById('cnt-soldamb').textContent = soldAmb.length;
+  document.getElementById('cnt-soldspot').textContent = soldSpot.length;
+  document.getElementById('cnt-payrecv').textContent = paidTickets.length;
+
+  const sumAmt = list => list.reduce((s,t)=> s + (Number(t.amount)||0), 0);
+  document.getElementById('amt-soldamb').textContent = fmtRs(sumAmt(soldAmb));
+  document.getElementById('amt-soldspot').textContent = fmtRs(sumAmt(soldSpot));
+  document.getElementById('amt-payrecv').textContent = fmtRs(sumAmt(paidTickets));
+
+  const confirmedSold = soldAmb.length + soldSpot.length;
+  document.getElementById('confirmedCount').textContent = confirmedSold + ' tickets';
+  document.getElementById('confirmedRevenue').textContent = fmtRs(sumAmt(soldAmb)+sumAmt(soldSpot)) + ' collected';
+
+  renderShowBreakdown();
+  renderDashboardCharts();
+}
+
+function renderShowBreakdown(){
+  const wrap = document.getElementById('showBreakdown');
+  if(!wrap) return;
+  wrap.innerHTML = SHOWS.map(s=>{
+    const ts = state.tickets.filter(t=>t.show===s);
+    const soldAmb = ts.filter(t=>t.status==='sold_ambassador');
+    const soldSpot = ts.filter(t=>t.status==='sold_spot');
+    const confirmed = soldAmb.length + soldSpot.length;
+    const priced = [...soldAmb, ...soldSpot].filter(t=> t.amount!=null && t.amount!=='');
+    const totalRevenue = priced.reduce((sum,t)=> sum + Number(t.amount), 0);
+    const avgPrice = priced.length? totalRevenue/priced.length : null;
+    const original = SHOW_ORIGINAL_PRICE[s];
+    const diff = avgPrice!=null? original - avgPrice : null;
+    const unpriced = confirmed - priced.length;
+    let diffLine;
+    if(diff==null){ diffLine = '—'; }
+    else if(diff > 0){ diffLine = fmtRs(Math.round(diff)) + ' less'; }
+    else if(diff < 0){ diffLine = fmtRs(Math.round(-diff)) + ' more'; }
+    else { diffLine = 'Rs 0 (full price)'; }
+    return `<div class="show-block">
+      <div class="show-block-title">Show ${s} <span class="show-price">Original Rs ${original}</span></div>
+      <div class="show-block-stats">
+        <div class="sb-row"><span>Confirmed Sold</span><b>${confirmed}</b></div>
+        <div class="sb-row"><span>&nbsp;&nbsp;via Ambassadors</span><b>${soldAmb.length}</b></div>
+        <div class="sb-row"><span>&nbsp;&nbsp;via Stalls / On-Spot</span><b>${soldSpot.length}</b></div>
+        <div class="sb-row"><span>Revenue Collected</span><b>${fmtRs(totalRevenue)}</b></div>
+        <div class="sb-row"><span>Avg. Sold Price</span><b>${avgPrice!=null? fmtRs(Math.round(avgPrice)) : '—'}</b></div>
+        <div class="sb-row highlight"><span>Avg. Sold vs Original</span><b>${diffLine}</b></div>
+        ${unpriced>0? `<div class="sb-note">${unpriced} confirmed ticket(s) have no price entered yet — excluded from the average</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashboardCharts(){
+  if(typeof Chart === 'undefined') return;
+  const showVal = document.getElementById('dashShowFilter').value;
+  const ts = filteredByShow(state.tickets, showVal);
+  const cats = ['with_me','with_ambassador','sold_ambassador','sold_spot'];
+  const catLabels = ['With Me','Handed','Sold (Amb.)','Sold (Spot)'];
+  const catColors = ['#6b7280','#e0559b','#3fb37f','#d98f3c'];
+  const catCounts = cats.map(c=> ts.filter(t=>t.status===c).length);
+
+  destroyChart('cat');
+  charts.cat = new Chart(document.getElementById('chartCategory'), {
+    type:'doughnut',
+    data:{ labels:catLabels, datasets:[{data:catCounts, backgroundColor:catColors, borderWidth:0}] },
+    options:{ plugins:{legend:{position:'bottom', labels:{color:'#2b1c12', font:{size:11}}}} }
+  });
+
+  destroyChart('show');
+  const showCounts = SHOWS.map(s=> cats.map(c=> state.tickets.filter(t=>t.show===s && t.status===c).length));
+  charts.show = new Chart(document.getElementById('chartShow'), {
+    type:'bar',
+    data:{
+      labels:['Show 1','Show 2','Show 3'],
+      datasets: cats.map((c,i)=>({ label:catLabels[i], data: showCounts.map(row=>row[i]), backgroundColor:catColors[i] }))
+    },
+    options:{ responsive:true, scales:{x:{stacked:true, ticks:{color:'#2b1c12'}}, y:{stacked:true, ticks:{color:'#2b1c12'}}}, plugins:{legend:{position:'bottom', labels:{color:'#2b1c12', font:{size:11}}}} }
+  });
+
+  destroyChart('ambRev');
+  const ambLabels = state.ambassadors.map(a=>a.name);
+  const ambRev = state.ambassadors.map(a=> state.tickets.filter(t=>t.ambassadorId===a.id && t.status==='sold_ambassador').reduce((s,t)=>s+(Number(t.amount)||0),0));
+  charts.ambRev = new Chart(document.getElementById('chartAmbRevenue'), {
+    type:'bar',
+    data:{ labels: ambLabels.length?ambLabels:['No ambassadors yet'], datasets:[{ data: ambRev.length?ambRev:[0], backgroundColor:'#c9a24e' }] },
+    options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#2b1c12'}}, y:{ticks:{color:'#2b1c12'}}} }
+  });
+
+  destroyChart('revSplit');
+  const ambTotal = state.tickets.filter(t=>t.status==='sold_ambassador').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const spotTotal = state.tickets.filter(t=>t.status==='sold_spot').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  charts.revSplit = new Chart(document.getElementById('chartRevenueSplit'), {
+    type:'pie',
+    data:{ labels:['Ambassador Sales','On-Spot Sales'], datasets:[{ data:[ambTotal,spotTotal], backgroundColor:['#3fb37f','#d98f3c'] }] },
+    options:{ plugins:{legend:{position:'bottom', labels:{color:'#2b1c12', font:{size:11}}}} }
+  });
+}
+
+function renderReportCharts(){
+  if(typeof Chart === 'undefined') return;
+  const cats = ['with_me','with_ambassador','sold_ambassador','sold_spot'];
+  const catLabels = ['With Me','Handed to Ambassador','Sold by Ambassador','Sold on Spot'];
+  const catColors = ['#6b7280','#e0559b','#3fb37f','#d98f3c'];
+  const catCounts = cats.map(c=> state.tickets.filter(t=>t.status===c).length);
+
+  destroyChart('repCat');
+  charts.repCat = new Chart(document.getElementById('repChartCategory'), {
+    type:'bar',
+    data:{ labels:catLabels, datasets:[{ data:catCounts, backgroundColor:catColors }] },
+    options:{ plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#2b1c12'}}, y:{ticks:{color:'#2b1c12'}}} }
+  });
+
+  destroyChart('repShow');
+  const soldPerShow = SHOWS.map(s=> state.tickets.filter(t=>t.show===s && (t.status==='sold_ambassador'||t.status==='sold_spot')).length);
+  const remainPerShow = SHOWS.map(s=> 160 - soldPerShow[SHOWS.indexOf(s)]);
+  charts.repShow = new Chart(document.getElementById('repChartShow'), {
+    type:'bar',
+    data:{ labels:['Show 1','Show 2','Show 3'],
+      datasets:[
+        {label:'Sold', data:soldPerShow, backgroundColor:'#3fb37f'},
+        {label:'Remaining', data:remainPerShow, backgroundColor:'#d9cdb2'}
+      ] },
+    options:{ scales:{x:{stacked:true, ticks:{color:'#2b1c12'}}, y:{stacked:true, ticks:{color:'#2b1c12'}}}, plugins:{legend:{position:'bottom', labels:{color:'#2b1c12', font:{size:11}}}} }
+  });
+
+  destroyChart('repRev');
+  const revByCat = cats.map(c=> state.tickets.filter(t=>t.status===c).reduce((s,t)=>s+(Number(t.amount)||0),0));
+  charts.repRev = new Chart(document.getElementById('repChartRevenue'), {
+    type:'doughnut',
+    data:{ labels:catLabels, datasets:[{data:revByCat, backgroundColor:catColors}] },
+    options:{ plugins:{legend:{position:'bottom', labels:{color:'#2b1c12', font:{size:11}}}} }
+  });
+
+  destroyChart('repAmb');
+  const ambLabels = state.ambassadors.map(a=>a.name);
+  const ambSoldCounts = state.ambassadors.map(a=> state.tickets.filter(t=>t.ambassadorId===a.id && t.status==='sold_ambassador').length);
+  const ambHandedCounts = state.ambassadors.map(a=> state.tickets.filter(t=>t.ambassadorId===a.id).length);
+  charts.repAmb = new Chart(document.getElementById('repChartAmbPerf'), {
+    type:'bar',
+    data:{ labels: ambLabels.length?ambLabels:['No ambassadors yet'],
+      datasets:[
+        {label:'Handed', data: ambHandedCounts.length?ambHandedCounts:[0], backgroundColor:'#e0559b'},
+        {label:'Sold', data: ambSoldCounts.length?ambSoldCounts:[0], backgroundColor:'#3fb37f'}
+      ] },
+    options:{ scales:{x:{ticks:{color:'#2b1c12'}}, y:{ticks:{color:'#2b1c12'}}}, plugins:{legend:{position:'bottom', labels:{color:'#2b1c12', font:{size:11}}}} }
+  });
+}
+
+document.getElementById('dashShowFilter').addEventListener('change', renderDashboard);
+
+/* =========================================================
+   RENDER — TICKETS TABLE
+   ========================================================= */
+function populateAmbassadorSelects(){
+  const selects = ['fltAmbassador','assignAmbassador','paymentAmbassador'];
+  selects.forEach(id=>{
+    const sel = document.getElementById(id);
+    const keepFirst = id==='fltAmbassador';
+    const current = sel.value;
+    sel.innerHTML = keepFirst ? '<option value="all">All Ambassadors</option>' : '';
+    state.ambassadors.forEach(a=>{
+      const opt = document.createElement('option');
+      opt.value = a.id; opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+    if([...sel.options].some(o=>o.value===current)) sel.value = current;
+  });
+}
+
+function renderTicketsTable(){
+  const show = document.getElementById('fltShow').value;
+  const status = document.getElementById('fltStatus').value;
+  const amb = document.getElementById('fltAmbassador').value;
+  const q = document.getElementById('ticketSearch').value.trim().toUpperCase();
+
+  let list = state.tickets;
+  if(show!=='all') list = list.filter(t=>String(t.show)===show);
+  if(status!=='all') list = list.filter(t=>t.status===status);
+  if(amb!=='all') list = list.filter(t=>t.ambassadorId===amb);
+  if(q) list = list.filter(t=>t.id.toUpperCase().includes(q));
+
+  document.getElementById('ticketCountLabel').textContent = list.length + ' tickets';
+
+  const tbody = document.getElementById('ticketsTbody');
+  if(list.length===0){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No tickets match these filters</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.slice(0,600).map(t=>`
+    <tr class="row-click" data-id="${t.id}">
+      <td class="id-code">${t.id}</td>
+      <td>${t.show}</td>
+      <td><span class="pill ${statusPillClass(t.status)}">${statusLabel(t.status)}</span></td>
+      <td>${t.ambassadorId? ambName(t.ambassadorId) : '—'}</td>
+      <td>${t.amount!=null? fmtRs(t.amount) : '—'}</td>
+      <td>${t.holder || '—'}</td>
+      <td>${t.status==='sold_spot' ? (t.receivedBy || '—') : '—'}</td>
+      <td>${t.status==='sold_ambassador' ? (t.paymentReceived?'Paid':'Pending') : (t.status==='sold_spot'?'Paid':'—')}</td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.addEventListener('click', ()=> openTicketModal(tr.dataset.id));
+  });
+}
+['fltShow','fltStatus','fltAmbassador','ticketSearch'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderTicketsTable);
+  document.getElementById(id).addEventListener('change', renderTicketsTable);
+});
+
+/* =========================================================
+   TICKET MODAL
+   ========================================================= */
+function openTicketModal(id){
+  const t = state.tickets.find(x=>x.id===id);
+  if(!t){ toast('Ticket ' + id + ' not found'); return; }
+  document.getElementById('modalTitle').textContent = t.id;
+  document.getElementById('modalSub').textContent = 'Show ' + t.show + ' · ' + statusLabel(t.status);
+
+  const ambOptions = state.ambassadors.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  let body = '';
+
+  if(t.status==='with_me'){
+    body = `
+      <label>Hand to Ambassador</label>
+      <select id="mHandAmb"><option value="">Choose ambassador&hellip;</option>${ambOptions}</select>
+      <div class="modal-actions"><button class="btn" id="mBtnHand">Hand Over</button></div>
+      <hr style="border-color:#e6dbc4; margin:16px 0;">
+      <label>Or sell it right now — Amount (Rs)</label>
+      <input type="number" id="mSpotAmount" placeholder="e.g. 500">
+      <label>Buyer / holder name</label>
+      <input type="text" id="mSpotHolder" placeholder="Name">
+      <label>Payment received by (who at the stall took the cash)</label>
+      <input type="text" id="mSpotReceivedBy" placeholder="e.g. Ayesha Khan">
+      <div class="modal-actions"><button class="btn secondary" id="mBtnSpot">Mark Sold on Spot</button></div>
+    `;
+  } else if(t.status==='with_ambassador'){
+    body = `
+      <div class="field-note">Currently with <b>${ambName(t.ambassadorId)}</b></div>
+      <label>Amount (Rs)</label>
+      <input type="number" id="mAmbAmount" placeholder="e.g. 500">
+      <label>Buyer / holder name</label>
+      <input type="text" id="mAmbHolder" placeholder="Name">
+      <div class="modal-actions">
+        <button class="btn" id="mBtnMarkSold">Mark Sold by Ambassador</button>
+        <button class="btn secondary" id="mBtnReturn">Undo (Return to Me)</button>
+      </div>
+    `;
+  } else if(t.status==='sold_ambassador'){
+    body = `
+      <div class="field-note">Sold via <b>${ambName(t.ambassadorId)}</b></div>
+      <label>Amount (Rs)</label>
+      <input type="number" id="mEditAmount" value="${t.amount!=null?t.amount:''}">
+      <label>Buyer / holder name</label>
+      <input type="text" id="mEditHolder" value="${t.holder||''}">
+      <div class="field-note">Payment status: <b>${t.paymentReceived?'Received':'Pending'}</b></div>
+      <div class="modal-actions">
+        <button class="btn" id="mBtnSaveEdit">Save</button>
+        ${t.paymentReceived? '<button class="btn secondary" id="mBtnUnmarkPaid">Undo Payment Received</button>' : '<button class="btn secondary" id="mBtnMarkPaid">Mark Payment Received</button>'}
+      </div>
+      <hr style="border-color:#e6dbc4; margin:16px 0;">
+      <div class="modal-actions">
+        <button class="btn secondary" id="mBtnUndoSale">Undo Sale (Back to Ambassador)</button>
+        <button class="btn danger" id="mBtnDeleteDetails">Delete Details / Reset Ticket</button>
+      </div>
+    `;
+  } else if(t.status==='sold_spot'){
+    body = `
+      <label>Amount (Rs)</label>
+      <input type="number" id="mEditAmount" value="${t.amount!=null?t.amount:''}">
+      <label>Buyer / holder name</label>
+      <input type="text" id="mEditHolder" value="${t.holder||''}">
+      <label>Payment received by (who at the stall took the cash)</label>
+      <input type="text" id="mEditReceivedBy" value="${t.receivedBy||''}">
+      <div class="modal-actions"><button class="btn" id="mBtnSaveEdit">Save</button></div>
+      <hr style="border-color:#e6dbc4; margin:16px 0;">
+      <div class="modal-actions">
+        <button class="btn danger" id="mBtnDeleteDetails">Undo / Delete Details (Reset Ticket)</button>
+      </div>
+    `;
+  }
+  document.getElementById('modalBody').innerHTML = body;
+  document.getElementById('modalOverlay').classList.add('show');
+
+  const closeModal = ()=> document.getElementById('modalOverlay').classList.remove('show');
+
+  const b1 = document.getElementById('mBtnHand');
+  if(b1) b1.onclick = async ()=>{
+    const ambId = document.getElementById('mHandAmb').value;
+    if(!ambId){ toast('Choose an ambassador first'); return; }
+    await updateTicket(t.id, { status:'with_ambassador', ambassadorId:ambId, handedAt: Date.now() });
+    toast(t.id + ' handed to ' + ambName(ambId)); closeModal();
+  };
+  const b2 = document.getElementById('mBtnSpot');
+  if(b2) b2.onclick = async ()=>{
+    const amount = document.getElementById('mSpotAmount').value;
+    const holder = document.getElementById('mSpotHolder').value;
+    const receivedBy = document.getElementById('mSpotReceivedBy').value;
+    await updateTicket(t.id, { status:'sold_spot', amount: amount?Number(amount):null, holder: holder||null, receivedBy: receivedBy||null, paymentReceived:true, soldAt: Date.now() });
+    toast(t.id + ' marked sold on spot'); closeModal();
+  };
+  const b3 = document.getElementById('mBtnMarkSold');
+  if(b3) b3.onclick = async ()=>{
+    const amount = document.getElementById('mAmbAmount').value;
+    const holder = document.getElementById('mAmbHolder').value;
+    await updateTicket(t.id, { status:'sold_ambassador', amount: amount?Number(amount):null, holder: holder||null, paymentReceived:false, soldAt: Date.now() });
+    toast(t.id + ' marked sold by ambassador'); closeModal();
+  };
+  const b4 = document.getElementById('mBtnReturn');
+  if(b4) b4.onclick = async ()=>{
+    await updateTicket(t.id, { status:'with_me', ambassadorId:null, handedAt:null });
+    toast(t.id + ' returned'); closeModal();
+  };
+  const b5 = document.getElementById('mBtnSaveEdit');
+  if(b5) b5.onclick = async ()=>{
+    const amount = document.getElementById('mEditAmount').value;
+    const holder = document.getElementById('mEditHolder').value;
+    const patch = { amount: amount?Number(amount):null, holder: holder||null };
+    const rbEl = document.getElementById('mEditReceivedBy');
+    if(rbEl) patch.receivedBy = rbEl.value || null;
+    await updateTicket(t.id, patch);
+    toast(t.id + ' updated'); closeModal();
+  };
+  const b6 = document.getElementById('mBtnMarkPaid');
+  if(b6) b6.onclick = async ()=>{
+    await updateTicket(t.id, { paymentReceived:true });
+    toast(t.id + ' marked as paid'); closeModal();
+  };
+  const b7 = document.getElementById('mBtnUnmarkPaid');
+  if(b7) b7.onclick = async ()=>{
+    await updateTicket(t.id, { paymentReceived:false });
+    toast(t.id + ' payment marked as pending'); closeModal();
+  };
+  const b8 = document.getElementById('mBtnUndoSale');
+  if(b8) b8.onclick = async ()=>{
+    if(!confirm('Undo this sale and put ' + t.id + ' back with ' + ambName(t.ambassadorId) + '? The amount and buyer name will be cleared.')) return;
+    await updateTicket(t.id, { status:'with_ambassador', amount:null, holder:null, paymentReceived:false, soldAt:null });
+    toast(t.id + ' sale undone — back with ' + ambName(t.ambassadorId)); closeModal();
+  };
+  const b9 = document.getElementById('mBtnDeleteDetails');
+  if(b9) b9.onclick = async ()=>{
+    if(!confirm('Delete all details for ' + t.id + ' and reset it to "With Me"? This clears the buyer, amount, and ambassador link.')) return;
+    await updateTicket(t.id, { status:'with_me', ambassadorId:null, amount:null, holder:null, receivedBy:null, paymentReceived:false, handedAt:null, soldAt:null });
+    toast(t.id + ' reset to With Me'); closeModal();
+  };
+}
+document.getElementById('modalClose').addEventListener('click', ()=> document.getElementById('modalOverlay').classList.remove('show'));
+document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') e.currentTarget.classList.remove('show'); });
+
+/* =========================================================
+   AMBASSADORS VIEW
+   ========================================================= */
+document.getElementById('btnAddAmbassador').addEventListener('click', async ()=>{
+  const name = document.getElementById('ambName').value.trim();
+  const phone = document.getElementById('ambPhone').value.trim();
+  if(!name){ toast('Enter a name'); return; }
+  await addAmbassador({ name, phone: phone||null, createdAt: Date.now() });
+  document.getElementById('ambName').value=''; document.getElementById('ambPhone').value='';
+  toast('Ambassador added: ' + name);
+});
+
+function updateAssignPreview(){
+  const nums = parseNumbers(document.getElementById('assignNumbers').value);
+  document.getElementById('assignPreview').textContent = nums.length? nums.length + ' ticket(s) selected' : '';
+}
+document.getElementById('assignNumbers').addEventListener('input', updateAssignPreview);
+
+document.getElementById('btnAssignTickets').addEventListener('click', async ()=>{
+  const ambId = document.getElementById('assignAmbassador').value;
+  const show = Number(document.getElementById('assignShow').value);
+  const nums = parseNumbers(document.getElementById('assignNumbers').value);
+  if(!ambId){ toast('Choose an ambassador'); return; }
+  if(nums.length===0){ toast('Enter ticket numbers (ranges or commas)'); return; }
+  const ids = nums.filter(n=>n>=1 && n<=160).map(n=> ticketIdFor(show,n));
+  const eligible = ids.filter(id=>{ const t = state.tickets.find(x=>x.id===id); return t && t.status==='with_me'; });
+  const skipped = ids.length - eligible.length;
+  if(eligible.length===0){ toast('None of those tickets are available (already handed/sold)'); return; }
+  await bulkUpdateTickets(eligible, { status:'with_ambassador', ambassadorId:ambId, handedAt: Date.now() });
+  document.getElementById('assignNumbers').value=''; updateAssignPreview();
+  toast(`Handed ${eligible.length} ticket(s) to ${ambName(ambId)}` + (skipped? ` — ${skipped} skipped (not available)` : ''));
+});
+
+function renderAmbassadorsList(){
+  const wrap = document.getElementById('ambassadorsList');
+  if(state.ambassadors.length===0){ wrap.innerHTML = '<div class="empty">No ambassadors added yet</div>'; return; }
+  wrap.innerHTML = state.ambassadors.map(a=>{
+    const own = state.tickets.filter(t=>t.ambassadorId===a.id);
+    const handed = own.length;
+    const sold = own.filter(t=>t.status==='sold_ambassador').length;
+    const stillWithThem = own.filter(t=>t.status==='with_ambassador').length;
+    const revenue = own.filter(t=>t.status==='sold_ambassador').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const paid = own.filter(t=>t.status==='sold_ambassador' && t.paymentReceived).reduce((s,t)=>s+(Number(t.amount)||0),0);
+    return `<div class="amb-card">
+      <div class="top">
+        <div class="name"><span class="amb-swatch"></span>${a.name}</div>
+        <span class="field-note">${a.phone||''}</span>
+      </div>
+      <div class="amb-stats">
+        <div class="s">Handed<b>${handed}</b></div>
+        <div class="s">Still with them<b>${stillWithThem}</b></div>
+        <div class="s">Sold<b>${sold}</b></div>
+        <div class="s">Revenue<b>${fmtRs(revenue)}</b></div>
+        <div class="s">Payment received<b>${fmtRs(paid)}</b></div>
+        <div class="s">Pending<b>${fmtRs(revenue-paid)}</b></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* =========================================================
+   PAYMENTS VIEW
+   ========================================================= */
+function updatePaymentPreview(){
+  const ambId = document.getElementById('paymentAmbassador').value;
+  const amount = Number(document.getElementById('paymentAmount').value)||0;
+  const box = document.getElementById('paymentPreview');
+  if(!ambId){ box.textContent=''; return; }
+  const unpaid = state.tickets.filter(t=>t.ambassadorId===ambId && t.status==='sold_ambassador' && !t.paymentReceived);
+  if(unpaid.length===0){ box.textContent = 'No unpaid sold tickets for this ambassador.'; return; }
+  const per = amount>0? (amount/unpaid.length) : 0;
+  box.textContent = `Will be split across ${unpaid.length} unpaid sold ticket(s) — ${fmtRs(per)} each.`;
+}
+['paymentAmbassador','paymentAmount'].forEach(id=> document.getElementById(id).addEventListener('input', updatePaymentPreview));
+document.getElementById('paymentAmbassador').addEventListener('change', updatePaymentPreview);
+
+document.getElementById('btnRecordPayment').addEventListener('click', async ()=>{
+  const ambId = document.getElementById('paymentAmbassador').value;
+  const amount = Number(document.getElementById('paymentAmount').value)||0;
+  if(!ambId){ toast('Choose an ambassador'); return; }
+  if(amount<=0){ toast('Enter an amount'); return; }
+  const unpaid = state.tickets.filter(t=>t.ambassadorId===ambId && t.status==='sold_ambassador' && !t.paymentReceived);
+  if(unpaid.length===0){ toast('No unpaid sold tickets for this ambassador'); return; }
+  const per = Math.round((amount/unpaid.length)*100)/100;
+  await bulkUpdateTickets(unpaid.map(t=>t.id), { amount: per, paymentReceived:true });
+  await addPayment({ ambassadorId:ambId, amount, ticketCount: unpaid.length, perTicket: per, date: Date.now() });
+  document.getElementById('paymentAmount').value=''; updatePaymentPreview();
+  toast(`Recorded ${fmtRs(amount)} from ${ambName(ambId)} across ${unpaid.length} ticket(s)`);
+});
+
+function renderPaymentsTable(){
+  const tbody = document.getElementById('paymentsTbody');
+  if(state.payments.length===0){ tbody.innerHTML = '<tr><td colspan="5" class="empty">No payments recorded yet</td></tr>'; return; }
+  tbody.innerHTML = state.payments.map(p=>`
+    <tr>
+      <td>${new Date(p.date).toLocaleDateString()}</td>
+      <td>${ambName(p.ambassadorId)}</td>
+      <td>${fmtRs(p.amount)}</td>
+      <td>${p.ticketCount}</td>
+      <td>${fmtRs(p.perTicket)}</td>
+    </tr>`).join('');
+}
+
+/* =========================================================
+   EXPORTS — CSV & PNG
+   ========================================================= */
+function csvEscape(v){
+  if(v===null || v===undefined) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+function toCSV(rows){
+  return rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
+}
+function downloadCSV(filename, rows){
+  const csv = toCSV(rows);
+  const blob = new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+function downloadChartPNG(chartKey, name){
+  const c = charts[chartKey];
+  if(!c){ toast('Chart not ready yet — open this view first'); return; }
+  const a = document.createElement('a');
+  a.href = c.toBase64Image('image/png', 1);
+  a.download = name + '.png';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+document.querySelectorAll('[data-png-chart]').forEach(btn=>{
+  btn.addEventListener('click', ()=> downloadChartPNG(btn.dataset.pngChart, btn.dataset.pngName || btn.dataset.pngChart));
+});
+
+document.getElementById('btnCsvCategorySummary').addEventListener('click', ()=>{
+  const showVal = document.getElementById('dashShowFilter').value;
+  const ts = filteredByShow(state.tickets, showVal);
+  const withMe = ts.filter(t=>t.status==='with_me');
+  const handed = ts.filter(t=>t.status==='with_ambassador');
+  const soldAmb = ts.filter(t=>t.status==='sold_ambassador');
+  const soldSpot = ts.filter(t=>t.status==='sold_spot');
+  const paidTickets = soldAmb.filter(t=>t.paymentReceived);
+  const sumAmt = list => list.reduce((s,t)=> s + (Number(t.amount)||0), 0);
+  const rows = [
+    ['Category','Tickets','Amount (Rs)'],
+    ['1 - With Me (unassigned stock)', withMe.length, ''],
+    ['2 - Handed to Ambassador', handed.length, ''],
+    ['3 - Sold by Ambassador', soldAmb.length, sumAmt(soldAmb)],
+    ['4 - Payments Received from Ambassadors', paidTickets.length, sumAmt(paidTickets)],
+    ['5 - Sold on Spot', soldSpot.length, sumAmt(soldSpot)],
+    [],
+    ['Confirmed Sold (3+5)', soldAmb.length + soldSpot.length, sumAmt(soldAmb)+sumAmt(soldSpot)]
+  ];
+  downloadCSV('kds-category-summary.csv', rows);
+});
+
+document.getElementById('btnCsvShowBreakdown').addEventListener('click', ()=>{
+  const rows = [['Show','Original Price (Rs)','Confirmed Sold','Via Ambassadors','Via On-Spot','Revenue Collected (Rs)','Avg Sold Price (Rs)','Avg vs Original (Rs)']];
+  SHOWS.forEach(s=>{
+    const ts = state.tickets.filter(t=>t.show===s);
+    const soldAmb = ts.filter(t=>t.status==='sold_ambassador');
+    const soldSpot = ts.filter(t=>t.status==='sold_spot');
+    const confirmed = soldAmb.length + soldSpot.length;
+    const priced = [...soldAmb, ...soldSpot].filter(t=> t.amount!=null && t.amount!=='');
+    const totalRevenue = priced.reduce((sum,t)=> sum + Number(t.amount), 0);
+    const avgPrice = priced.length? totalRevenue/priced.length : null;
+    const original = SHOW_ORIGINAL_PRICE[s];
+    const diff = avgPrice!=null? original - avgPrice : null;
+    rows.push([
+      'Show '+s, original, confirmed, soldAmb.length, soldSpot.length, totalRevenue,
+      avgPrice!=null? Math.round(avgPrice) : '',
+      diff!=null? Math.round(diff) : ''
+    ]);
+  });
+  downloadCSV('kds-show-breakdown.csv', rows);
+});
+
+document.getElementById('btnCsvGrid').addEventListener('click', ()=>{
+  const ts = state.tickets.filter(t=>t.show===gridActiveShow).sort((a,b)=>a.number-b.number);
+  const rows = [['Ticket Code','Show','Number','Category','Ambassador','Amount (Rs)','Holder']];
+  ts.forEach(t=> rows.push([t.id, t.show, t.number, statusLabel(t.status), t.ambassadorId? ambName(t.ambassadorId):'', t.amount!=null? t.amount:'', t.holder||'']));
+  downloadCSV(`kds-grid-show${gridActiveShow}.csv`, rows);
+});
+
+document.getElementById('btnCsvTickets').addEventListener('click', ()=>{
+  const show = document.getElementById('fltShow').value;
+  const status = document.getElementById('fltStatus').value;
+  const amb = document.getElementById('fltAmbassador').value;
+  const q = document.getElementById('ticketSearch').value.trim().toUpperCase();
+  let list = state.tickets;
+  if(show!=='all') list = list.filter(t=>String(t.show)===show);
+  if(status!=='all') list = list.filter(t=>t.status===status);
+  if(amb!=='all') list = list.filter(t=>t.ambassadorId===amb);
+  if(q) list = list.filter(t=>t.id.toUpperCase().includes(q));
+  if(list.length===0){ toast('No tickets match the current filters'); return; }
+  const rows = [['Code','Show','Category','Ambassador','Amount (Rs)','Holder','Received By','Payment']];
+  list.forEach(t=> rows.push([
+    t.id, t.show, statusLabel(t.status), t.ambassadorId? ambName(t.ambassadorId):'',
+    t.amount!=null? t.amount:'', t.holder||'',
+    t.status==='sold_spot'? (t.receivedBy||'') : '',
+    t.status==='sold_ambassador' ? (t.paymentReceived?'Paid':'Pending') : (t.status==='sold_spot'?'Paid':'')
+  ]));
+  downloadCSV('kds-tickets.csv', rows);
+});
+
+document.getElementById('btnCsvAmbassadors').addEventListener('click', ()=>{
+  if(state.ambassadors.length===0){ toast('No ambassadors added yet'); return; }
+  const rows = [['Name','Phone','Handed','Still With Them','Sold','Revenue (Rs)','Payment Received (Rs)','Pending (Rs)']];
+  state.ambassadors.forEach(a=>{
+    const own = state.tickets.filter(t=>t.ambassadorId===a.id);
+    const handed = own.length;
+    const sold = own.filter(t=>t.status==='sold_ambassador').length;
+    const stillWithThem = own.filter(t=>t.status==='with_ambassador').length;
+    const revenue = own.filter(t=>t.status==='sold_ambassador').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const paid = own.filter(t=>t.status==='sold_ambassador' && t.paymentReceived).reduce((s,t)=>s+(Number(t.amount)||0),0);
+    rows.push([a.name, a.phone||'', handed, stillWithThem, sold, revenue, paid, revenue-paid]);
+  });
+  downloadCSV('kds-ambassadors.csv', rows);
+});
+
+document.getElementById('btnCsvPayments').addEventListener('click', ()=>{
+  if(state.payments.length===0){ toast('No payments recorded yet'); return; }
+  const rows = [['Date','Ambassador','Amount (Rs)','Tickets Covered','Per Ticket (Rs)']];
+  state.payments.forEach(p=> rows.push([new Date(p.date).toLocaleDateString(), ambName(p.ambassadorId), p.amount, p.ticketCount, p.perTicket]));
+  downloadCSV('kds-payments.csv', rows);
+});
+
+document.querySelectorAll('[data-csv-report]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const cats = ['with_me','with_ambassador','sold_ambassador','sold_spot'];
+    const catLabels = ['With Me','Handed to Ambassador','Sold by Ambassador','Sold on Spot'];
+    const key = btn.dataset.csvReport;
+    let rows = null;
+    if(key==='repCat'){
+      rows = [['Category','Count']];
+      cats.forEach((c,i)=> rows.push([catLabels[i], state.tickets.filter(t=>t.status===c).length]));
+    } else if(key==='repShow'){
+      rows = [['Show','Sold','Remaining']];
+      SHOWS.forEach(s=>{
+        const sold = state.tickets.filter(t=>t.show===s && (t.status==='sold_ambassador'||t.status==='sold_spot')).length;
+        rows.push(['Show '+s, sold, 160-sold]);
+      });
+    } else if(key==='repRev'){
+      rows = [['Category','Revenue (Rs)']];
+      cats.forEach((c,i)=> rows.push([catLabels[i], state.tickets.filter(t=>t.status===c).reduce((s,t)=>s+(Number(t.amount)||0),0)]));
+    } else if(key==='repAmb'){
+      rows = [['Ambassador','Handed','Sold']];
+      state.ambassadors.forEach(a=>{
+        const handedCount = state.tickets.filter(t=>t.ambassadorId===a.id).length;
+        const soldCount = state.tickets.filter(t=>t.ambassadorId===a.id && t.status==='sold_ambassador').length;
+        rows.push([a.name, handedCount, soldCount]);
+      });
+      if(state.ambassadors.length===0) rows.push(['No ambassadors yet','','']);
+    }
+    if(rows) downloadCSV('kds-' + key + '.csv', rows);
+  });
+});
+
+/* =========================================================
+   MASTER RENDER
+   ========================================================= */
+function renderAll(){
+  populateAmbassadorSelects();
+  renderDashboard();
+  renderTicketGrid();
+  renderTicketsTable();
+  renderAmbassadorsList();
+  renderPaymentsTable();
+  updatePaymentPreview();
+  if(document.getElementById('view-reports').classList.contains('active')) renderReportCharts();
+}
+</script>
+</body>
+</html>
